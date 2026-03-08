@@ -362,8 +362,8 @@ function showPage(id) {
   if (id === 'health' && appData) setTimeout(animateScore, 200);
 }
 
-// ─── Connect Apps Script ─────────────────────────────────────────
-async function connectAPI() {
+// ─── Connect Apps Script (JSONP) ─────────────────────────────────
+function connectAPI() {
   const url = document.getElementById('apiUrl').value.trim();
   if (!url) { alert('請輸入 Apps Script Web App 網址'); return; }
   if (!url.includes('script.google.com')) { alert('網址格式不正確，應為 script.google.com/macros/s/.../exec'); return; }
@@ -372,19 +372,45 @@ async function connectAPI() {
   setStatus('loading', '連接中...');
   document.getElementById('connectBtn').disabled = true;
 
-  try {
-    const res = await fetch(`${apiEndpoint}?action=getData`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    if (json.error) throw new Error(json.error);
+  jsonpRequest(apiEndpoint + '?action=getData&callback=handleData');
+}
 
-    appData = buildAnalysis(json.records || [], 'Google Sheets');
-    setStatus('ok', `已連接 · ${appData.records.length} 筆`);
-    renderAll();
-  } catch (e) {
-    setStatus('error', e.message.slice(0, 40));
-  }
+function jsonpRequest(url) {
+  // 清除舊的 script tag
+  const old = document.getElementById('jsonp-script');
+  if (old) old.remove();
+
+  // 設定 timeout
+  const timer = setTimeout(() => {
+    setStatus('error', '連接逾時，請重試');
+    document.getElementById('connectBtn').disabled = false;
+  }, 10000);
+
+  window._jsonpTimer = timer;
+
+  const script = document.createElement('script');
+  script.id = 'jsonp-script';
+  script.src = url;
+  script.onerror = () => {
+    clearTimeout(timer);
+    setStatus('error', '無法載入，請確認網址');
+    document.getElementById('connectBtn').disabled = false;
+  };
+  document.head.appendChild(script);
+}
+
+function handleData(json) {
+  clearTimeout(window._jsonpTimer);
   document.getElementById('connectBtn').disabled = false;
+
+  if (json.error) {
+    setStatus('error', json.error.slice(0, 40));
+    return;
+  }
+
+  appData = buildAnalysis(json.records || [], 'Google Sheets');
+  setStatus('ok', `已連接 · ${appData.records.length} 筆`);
+  renderAll();
 }
 
 // ─── Demo Data ────────────────────────────────────────────────────
